@@ -78,6 +78,35 @@ export class BorshAccountsCoder<A extends string = string>
     throw new Error("Account not found");
   }
 
+  /* 
+  In React Native applications, when trying to use @coral-xyz/anchor >= v0.29.0, users will run into this error when using the library to fetch and decode certain accounts (i.e in program.account.accountName.fetch()):
+
+TypeError: b.readUIntLE is not a function (it is undefined)
+Other expected Buffer methods like readUInt32LE will fail too (have not tested myself).
+
+Specifically, in my case, the stack trace is throwing an error in buffer-layout's UInt layout class decode method.
+
+Root issue
+The root of the issue stems from this subarray function call in decodeUnchecked.
+
+public decodeUnchecked<T = any>(accountName: A, acc: Buffer): T {
+  // In RN, `subarray` returns `data` as a Uint8Array, rather than a Buffer.
+  const data = acc.subarray(DISCRIMINATOR_SIZE); 
+  const layout = this.accountLayouts.get(accountName);
+  if (!layout) {
+    throw new Error(`Unknown account: ${accountName}`);
+  }
+  return layout.decode(data);
+}
+The returned data is a Uint8Array when it should be a Buffer. This means it is missing the function readUIntLE and this causes the error later in buffer-layout's decode method.
+
+Explanation
+acc is aBuffer that comes from @solana/web3,js which uses the buffer npm package.
+
+In React Native runtime environment (Hermes) Buffer.subarray behaves differently than on Browser/Node environment. This is a known issue(1, 2). As a result, the subarray call incorrectly returns an instance of a Uint8Array rather than a Buffer.
+
+For a full understanding, read this issue.
+  */
   public decodeUnchecked<T = any>(accountName: A, acc: Buffer): T {
     // Chop off the discriminator before decoding.
     const discriminator = this.accountDiscriminator(accountName);
